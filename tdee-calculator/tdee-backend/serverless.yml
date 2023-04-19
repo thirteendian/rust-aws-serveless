@@ -1,0 +1,95 @@
+service: tdee-backend
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  stage: dev
+  region: us-east-1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - athena:StartQueryExecution
+        - athena:GetQueryExecution
+        - athena:GetQueryResults
+      Resource: "*"
+  environment:
+    TDEEBucket: my-tdee-data-bucket
+    ATHENA_RESULTS_OUTPUT_LOCATION: s3://${TDEEBucket}/results/
+
+functions:
+  results:
+    handler: handler.results
+    events:
+      - http:
+          path: results
+          method: get
+          cors: true
+      - http:
+          path: results
+          method: post
+          cors: true
+
+plugins:
+  - serverless-offline
+
+custom:
+  serverless-offline:
+    httpPort: 3000
+
+# Add the package configuration below
+package:
+  excludeDevDependencies: true
+  include:
+    - node_modules/**
+
+resources:
+  Resources:
+    TDEETable:
+      Type: AWS::Glue::Table
+      Properties:
+        CatalogId: !Ref AWS::AccountId
+        DatabaseName: tdee_data
+        TableInput:
+          Name: results
+          TableType: EXTERNAL_TABLE
+          Parameters: { "skip.header.line.count": "1" }
+          StorageDescriptor:
+            Columns:
+              - Name: age
+                Type: int
+              - Name: height
+                Type: double
+              - Name: weight
+                Type: double
+              # Add columns for other fields as required
+            Location: !Sub "s3://${TDEEBucket}/data/"
+            InputFormat: "org.apache.hadoop.mapred.TextInputFormat"
+            OutputFormat: "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
+            SerdeInfo:
+              SerializationLibrary: "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe"
+              Parameters: { "field.delim": "," }
+    TDEEBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: my-tdee-data-bucket
+
+  Outputs:
+    ApiUrl:
+      Description: "API Gateway URL"
+      Value: !Sub "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${opt:stage, self:provider.stage}"
+      Export:
+        Name: ApiUrl
+#  Outputs:
+#    ApiUrl:
+#      Description: "API Gateway URL"
+#      Value:
+#        Fn::Join:
+#          - ""
+#          - - "https://"
+#            - Ref: "ApiGatewayRestApi"
+#            - ".execute-api."
+#            - Ref: "AWS::Region"
+#            - ".amazonaws.com/"
+#            - "${opt:stage, self:provider.stage}"
+#      Export:
+#        Name: ApiUrl
